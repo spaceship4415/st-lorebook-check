@@ -1,0 +1,12 @@
+{
+    "display_name": "Lorebook Check",
+    "loading_order": 20,
+    "requires": [],
+    "optional": [],
+    "js": "index.js",
+    "css": "style.css",
+    "author": "spaceship4415",
+    "version": "0.1.0",
+    "license": "MIT",
+    "auto_update": false
+}
