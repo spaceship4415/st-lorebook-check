@@ -233,7 +233,7 @@
     color: var(--lbchk-ok);
 }
 
-.lbchk_open {
+.lbchk .lbchk_open {
     flex: none;
     width: 44px;
     height: 44px;
@@ -286,4 +286,48 @@
     gap: 4px;
     font-size: 0.8em;
     overflow-wrap: anywhere;
+}
+
+.lbchk_pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    max-width: 100%;
+    min-height: 44px;
+    margin: 0 0 10px;
+    padding: 6px 16px;
+    border: 1px solid var(--lbchk-bad);
+    border-radius: 999px;
+    background-color: var(--black30a);
+    color: var(--SmartThemeBodyColor);
+    font: inherit;
+    cursor: pointer;
+    text-align: left;
+}
+
+.lbchk_pill code {
+    overflow-wrap: anywhere;
+    background: none;
+}
+
+.lbchk_pill:active {
+    background-color: var(--black50a);
+}
+
+.lbchk .lbchk_create {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    box-sizing: border-box;
+    white-space: normal;
+    min-height: 44px;
+    margin: 0 0 10px;
+    padding: 6px 14px;
+}
+
+.lbchk_select {
+    min-height: 44px;
+    font-size: 16px; /* iOS 확대 방지 */
 }

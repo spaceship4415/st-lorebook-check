@@ -1,14 +1,15 @@
 // 로어북 점검: 모든 로어북을 훑어 '켜 놨는데 실제로는 프롬프트에 안 들어가는' 엔트리를 찾는다.
 // 1) 출구 점검: 엔트리 위치에 맞는 출구가 지금 프리셋·채팅에서 열려 있는지
-//    - 아웃렛: 프리셋에 {{outlet::이름}} 이 있는지 (반대로 매크로만 있고 엔트리가 없는 '빈 출구'도)
+//    - 아웃렛: 프리셋에 {{outlet::이름}} 이 있는지 (반대로 프리셋에만 있고 엔트리가 없는 아웃렛도)
 //    - ↑Char/↓Char: World Info (before/after) 마커 프롬프트가 켜져 있는지
 //    - ↑EM/↓EM: 예시 대화 마커가 켜져 있고 '예시 대화 안 넣기'가 꺼져 있는지
 //    - ↑AN/↓AN: 작가 노트가 들어가는 턴에만 같이 들어가므로 이 채팅의 작가 노트 빈도
 // 2) 발동 점검: 키가 없거나, 내용이 비었거나, 확률 0% 거나, 정규식 키가 깨져서 절대 발동하지 않는 엔트리
 
-import { loadWorldInfo, openWorldInfoEditor, parseRegexFromString, selected_world_info, world_info, world_info_position, METADATA_KEY } from '../../../world-info.js';
+import { createWorldInfoEntry, loadWorldInfo, openWorldInfoEditor, parseRegexFromString, saveWorldInfo, selected_world_info, world_info, world_info_position, METADATA_KEY } from '../../../world-info.js';
 import { promptManager } from '../../../openai.js';
 import { metadata_keys as AN_KEYS } from '../../../authors-note.js';
+import { copyText } from '../../../utils.js';
 
 const ctx = () => SillyTavern.getContext();
 
@@ -328,6 +329,12 @@ function renderCard(data, section) {
     const disabledNote = data.disabledNote ? '<div class="lbchk_note lbchk_warn">꺼진 엔트리만 있어요:</div>' : '';
     const list = data.entries?.length ? `<ul class="lbchk_entries">${data.entries.map(e => entryRow(e, data.detail)).join('')}</ul>` : '';
     const open = section === 'ok' || section === 'info' ? '' : 'open';
+    // 로어북에만 있는 아웃렛 → 프리셋에 붙여 넣을 매크로 복사 / 프리셋에만 있는 아웃렛 → 그 이름의 엔트리 만들기
+    const action = section === 'missing'
+        ? `<button type="button" class="lbchk_pill" data-copy="${escapeHtml(outletMacro(data.code))}" title="눌러서 복사"><i class="fa-regular fa-copy"></i><code>${escapeHtml(outletMacro(data.code))}</code></button>`
+        : section === 'empty'
+            ? `<button type="button" class="menu_button lbchk_create" data-outlet="${escapeHtml(data.code)}"><i class="fa-solid fa-plus"></i><span>이 이름으로 엔트리 만들기</span></button>`
+            : '';
     return `
         <details class="lbchk_card" data-status="${section}" ${open}>
             <summary class="lbchk_card_head">
@@ -336,15 +343,39 @@ function renderCard(data, section) {
                 ${data.entries?.length ? `<span class="lbchk_count">${data.entries.length}</span>` : ''}
                 <i class="fa-solid fa-chevron-down lbchk_chevron"></i>
             </summary>
-            ${near}${note}${promptNote(data.prompts)}${disabledNote}${list}
+            ${near}${note}${promptNote(data.prompts)}${action}${disabledNote}${list}
         </details>`;
 }
 
+const outletMacro = name => `{{outlet::${name}}}`;
+
+/**
+ * 클립보드 복사. 클립보드 API 가 거절하면(창에 초점이 없을 때 등) 숨긴 입력칸으로 한 번 더 시도한다.
+ * 입력칸은 열린 팝업(dialog) 안에 넣어야 모달 바깥이라 선택이 막히는 일이 없다.
+ */
+async function copyMacro(text, near) {
+    try {
+        await copyText(text);
+        return true;
+    } catch {
+        const parent = near.closest('dialog') ?? document.body;
+        const area = document.createElement('textarea');
+        area.value = text;
+        area.setAttribute('readonly', '');
+        area.style.cssText = 'position:fixed;opacity:0;left:0;top:0;';
+        parent.appendChild(area);
+        area.select();
+        const ok = document.execCommand('copy');
+        area.remove();
+        return ok;
+    }
+}
+
 const SECTIONS = [
-    ['missing', '미주입 아웃렛', 'fa-triangle-exclamation', '프리셋에 이 이름의 {{outlet::}} 이 없어 발동돼도 버려집니다.'],
+    ['missing', '로어북에만 있는 아웃렛', 'fa-triangle-exclamation', '프리셋에 넣어야 들어가요. 아래 매크로를 눌러 복사한 뒤 프리셋 프롬프트에 붙여 넣으세요.'],
     ['blocked', '출구 꺼짐', 'fa-toggle-off', '엔트리 위치에 맞는 출구가 지금 프리셋·채팅에서 닫혀 있습니다.'],
     ['never', '발동 안 됨', 'fa-ban', '설정 때문에 절대 프롬프트에 들어가지 않는 엔트리입니다.'],
-    ['empty', '빈 출구', 'fa-plug-circle-xmark', '프리셋에 매크로는 있는데 그 이름의 켜진 엔트리가 없습니다.'],
+    ['empty', '프리셋에만 있는 아웃렛', 'fa-plug-circle-xmark', '로어북에 이 이름의 켜진 엔트리가 없어서 빈칸으로 들어가요.'],
     ['info', '참고', 'fa-circle-info', ''],
     ['ok', '연결된 아웃렛', 'fa-circle-check', ''],
 ];
@@ -400,6 +431,45 @@ async function openEntry(book, uid, title) {
     setTimeout(() => element.classList.remove('lbchk_flash'), 2000);
 }
 
+// ---------- 엔트리 만들기 ----------
+
+/** 새 엔트리를 넣을 로어북 고르기. 지금 채팅에 걸린 로어북을 위에 두고 채팅 로어북을 먼저 고른다 */
+async function pickBook(active) {
+    const { Popup, POPUP_TYPE, POPUP_RESULT, getWorldInfoNames, chatMetadata } = ctx();
+    const names = getWorldInfoNames();
+    if (!names.length) {
+        toastr.warning('로어북이 없습니다. 먼저 로어북을 만들어 주세요.');
+        return null;
+    }
+    const others = names.filter(name => !active.has(name));
+    const option = (name, label) => `<option value="${escapeHtml(name)}">${escapeHtml(label ? `${name} (${label})` : name)}</option>`;
+    const root = document.createElement('div');
+    root.className = 'lbchk lbchk_pick';
+    root.innerHTML = `
+        <h3 class="lbchk_title"><i class="fa-solid fa-plus"></i><span>어느 로어북에 만들까요?</span></h3>
+        <select class="text_pole lbchk_select">
+            ${active.size ? `<optgroup label="지금 채팅에 걸린 로어북">${[...active].map(([name, labels]) => option(name, labels.join(' · '))).join('')}</optgroup>` : ''}
+            ${others.length ? `<optgroup label="다른 로어북">${others.map(name => option(name)).join('')}</optgroup>` : ''}
+        </select>`;
+    const select = root.querySelector('select');
+    const preferred = chatMetadata?.[METADATA_KEY];
+    if (preferred && names.includes(preferred)) select.value = preferred;
+
+    const popup = new Popup(root, POPUP_TYPE.CONFIRM, '', { okButton: '만들기', cancelButton: '취소', leftAlign: true });
+    const answer = await popup.show();
+    return answer === POPUP_RESULT.AFFIRMATIVE ? select.value : null;
+}
+
+/** 위치가 아웃렛이고 이름이 정해진 상시(🔵) 엔트리를 만들어 바로 저장한다 */
+async function createOutletEntry(book, name) {
+    const data = await loadWorldInfo(book);
+    const entry = data && createWorldInfoEntry(book, data);
+    if (!entry) throw new Error(`엔트리를 만들지 못했습니다: ${book}`);
+    Object.assign(entry, { comment: name, position: world_info_position.outlet, outletName: name, constant: true });
+    await saveWorldInfo(book, data, true);
+    return entry;
+}
+
 // ---------- 팝업 ----------
 
 async function openCheckPopup() {
@@ -415,7 +485,7 @@ async function openCheckPopup() {
         </div>
         ${mainApi === 'openai' ? '' : '<div class="lbchk_note lbchk_warn">지금 API가 Chat Completion이 아니라서 프리셋 점검 결과는 실제와 다를 수 있습니다.</div>'}
         <label class="checkbox_label lbchk_toggle">
-            <input type="checkbox" class="lbchk_active_only">
+            <input type="checkbox" class="lbchk_active_only" ${ctx().getCurrentChatId?.() ? 'checked' : ''}>
             <span>지금 채팅에 걸린 로어북만</span>
         </label>
         <div class="lbchk_status">로어북을 읽는 중…</div>
@@ -433,6 +503,33 @@ async function openCheckPopup() {
 
     find('.lbchk_active_only').addEventListener('change', draw);
     find('.lbchk_body').addEventListener('click', async event => {
+        const pill = event.target.closest('.lbchk_pill');
+        if (pill) {
+            if (await copyMacro(pill.dataset.copy, pill)) {
+                toastr.success(`${pill.dataset.copy} 복사했어요. 프리셋 프롬프트에 붙여 넣으세요.`);
+            } else {
+                toastr.error('복사하지 못했습니다. 길게 눌러 직접 복사해 주세요.');
+            }
+            return;
+        }
+
+        const create = event.target.closest('.lbchk_create');
+        if (create) {
+            const name = create.dataset.outlet;
+            const book = await pickBook(result.active);
+            if (!book) return;
+            try {
+                const entry = await createOutletEntry(book, name);
+                toastr.success(`'${book}'에 아웃렛 '${name}' 상시 엔트리를 만들었어요. 내용을 채워 주세요.`);
+                await popup.completeCancelled();
+                await openEntry(book, entry.uid, name);
+            } catch (error) {
+                console.error('[Lorebook Check] 엔트리 만들기 실패', error);
+                toastr.error('엔트리를 만들지 못했습니다. 콘솔을 확인해 주세요.');
+            }
+            return;
+        }
+
         const button = event.target.closest('.lbchk_open');
         if (!button) return;
         const { book, uid, title } = button.dataset;
@@ -480,7 +577,7 @@ function registerSlashCommand() {
             await openCheckPopup();
             return '';
         },
-        helpString: '모든 로어북에서 켜져 있는데 프롬프트에 들어가지 않는 엔트리(아웃렛 미주입, 꺼진 마커, 발동 불가 설정)를 찾습니다.',
+        helpString: '모든 로어북에서 켜져 있는데 프롬프트에 들어가지 않는 엔트리(프리셋에 빠진 아웃렛, 꺼진 마커, 발동 불가 설정)를 찾습니다.',
     }));
 }
 
